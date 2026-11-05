@@ -1,24 +1,34 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import 'dotenv/config';
-import pool from './db.js';
+import flightsRouter from './routes/flights.js';
 
 const app = express();
+
+app.use(helmet());
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.get('/flights', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM flights ORDER BY flight_date DESC');
-    res.json(result.rows);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro ao buscar voos' });
-  }
+app.use('/flights', flightsRouter);
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Rota não encontrada' });
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON inválido' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Dados grandes demais' });
+  if (err.code === '23503') return res.status(400).json({ error: 'Registro relacionado não encontrado' });
+  if (err.code === '22007' || err.code === '22008') return res.status(400).json({ error: 'Data inválida' });
+
+  res.status(500).json({ error: 'Erro interno' });
 });
 
 const PORT = process.env.PORT || 3000;
