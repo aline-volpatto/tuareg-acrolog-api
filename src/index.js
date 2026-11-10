@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import 'dotenv/config';
 import flightsRouter from './routes/flights.js';
 import studentsRouter from './routes/students.js';
+import maneuversRouter from './routes/maneuvers.js';
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.get('/health', (req, res) => {
 
 app.use('/flights', flightsRouter);
 app.use('/students', studentsRouter);
+app.use('/maneuvers', maneuversRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });
