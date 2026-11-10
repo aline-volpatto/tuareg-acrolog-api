@@ -1,3 +1,6 @@
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth.js';
+import { exigirLogin } from './middleware/exigirLogin.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,15 +13,16 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
+app.all('/api/auth/*splat', toNodeHandler(auth));
 app.use(express.json({ limit: '100kb' }));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/flights', flightsRouter);
-app.use('/students', studentsRouter);
-app.use('/maneuvers', maneuversRouter);
+app.use('/flights', exigirLogin, flightsRouter);
+app.use('/students', exigirLogin, studentsRouter);
+app.use('/maneuvers', exigirLogin, maneuversRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });
