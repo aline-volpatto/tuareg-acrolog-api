@@ -7,9 +7,13 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 12,
-    disableSignUp: true, 
+    disableSignUp: true,
   },
   rateLimit: {
-    enabled: true, 
+    enabled: true,
   },
+  trustedOrigins: (process.env.TRUSTED_ORIGINS || '')
+    .split(',')
+    .map((origem) => origem.trim())
+    .filter(Boolean),
 });

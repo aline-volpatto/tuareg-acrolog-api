@@ -11,18 +11,29 @@ import maneuversRouter from './routes/maneuvers.js';
 
 const app = express();
 
+const origensPermitidas = (process.env.TRUSTED_ORIGINS || '')
+  .split(',')
+  .map((origem) => origem.trim())
+  .filter(Boolean);
+
 app.use(helmet());
 app.use(cors());
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.all('/api/auth/*splat', toNodeHandler(auth));
+
 app.use(express.json({ limit: '100kb' }));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/flights', exigirLogin, flightsRouter);
-app.use('/students', exigirLogin, studentsRouter);
-app.use('/maneuvers', exigirLogin, maneuversRouter);
+app.use('/api/flights', exigirLogin, flightsRouter);
+app.use('/api/students', exigirLogin, studentsRouter);
+app.use('/api/maneuvers', exigirLogin, maneuversRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });
