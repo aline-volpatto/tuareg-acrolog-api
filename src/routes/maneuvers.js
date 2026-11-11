@@ -11,6 +11,7 @@ const maneuverSchema = z.object({
   name: z.string().trim().min(1, 'Nome é obrigatório').max(100),
   rating: z.string().trim().max(50).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  repeat: z.boolean().default(false),
   rolls: z
     .array(z.string().trim().min(1).max(30))
     .max(3, 'Máximo de 3 rolls por manobra')
@@ -20,7 +21,6 @@ const maneuverSchema = z.object({
 function errosDeValidacao(error) {
   return error.issues.map((i) => ({ campo: i.path.join('.'), mensagem: i.message }));
 }
-
 
 const SELECT_COM_ROLLS = `
   SELECT m.*,
@@ -35,7 +35,6 @@ async function buscarManobra(id) {
   const result = await pool.query(`${SELECT_COM_ROLLS} WHERE m.id = $1 GROUP BY m.id`, [id]);
   return result.rows[0];
 }
-
 
 async function comTransacao(tarefa) {
   const client = await pool.connect();
@@ -61,7 +60,6 @@ async function salvarRolls(client, maneuverId, rolls) {
   }
 }
 
-
 router.get('/', async (req, res) => {
   let flightId = null;
   if (req.query.flight_id !== undefined) {
@@ -81,6 +79,26 @@ router.get('/', async (req, res) => {
 });
 
 
+router.get('/next-flight', async (req, res) => {
+  const studentId = idSchema.safeParse(req.query.student_id);
+  if (!studentId.success) return res.status(400).json({ error: 'student_id inválido' });
+
+  const result = await pool.query(
+    `${SELECT_COM_ROLLS}
+     WHERE m.repeat = true
+       AND m.flight_id = (
+         SELECT id FROM flights
+         WHERE student_id = $1
+         ORDER BY flight_date DESC, engine_start DESC NULLS LAST, id DESC
+         LIMIT 1
+       )
+     GROUP BY m.id
+     ORDER BY m.id`,
+    [studentId.data]
+  );
+  res.json(result.rows);
+});
+
 router.get('/:id', async (req, res) => {
   const id = idSchema.safeParse(req.params.id);
   if (!id.success) return res.status(400).json({ error: 'ID inválido' });
@@ -90,21 +108,20 @@ router.get('/:id', async (req, res) => {
   res.json(manobra);
 });
 
-
 router.post('/', async (req, res) => {
   const parsed = maneuverSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Dados inválidos', detalhes: errosDeValidacao(parsed.error) });
   }
 
-  const { flight_id, name, rating, notes, rolls } = parsed.data;
+  const { flight_id, name, rating, notes, repeat, rolls } = parsed.data;
 
   const novoId = await comTransacao(async (client) => {
     const result = await client.query(
-      `INSERT INTO maneuvers (flight_id, name, rating, notes)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO maneuvers (flight_id, name, rating, notes, repeat)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [flight_id, name, rating ?? null, notes ?? null]
+      [flight_id, name, rating ?? null, notes ?? null, repeat]
     );
     const maneuverId = result.rows[0].id;
     await salvarRolls(client, maneuverId, rolls);
@@ -113,7 +130,6 @@ router.post('/', async (req, res) => {
 
   res.status(201).json(await buscarManobra(novoId));
 });
-
 
 router.put('/:id', async (req, res) => {
   const id = idSchema.safeParse(req.params.id);
@@ -124,15 +140,15 @@ router.put('/:id', async (req, res) => {
     return res.status(400).json({ error: 'Dados inválidos', detalhes: errosDeValidacao(parsed.error) });
   }
 
-  const { flight_id, name, rating, notes, rolls } = parsed.data;
+  const { flight_id, name, rating, notes, repeat, rolls } = parsed.data;
 
   const encontrou = await comTransacao(async (client) => {
     const result = await client.query(
       `UPDATE maneuvers
-       SET flight_id = $1, name = $2, rating = $3, notes = $4
-       WHERE id = $5
+       SET flight_id = $1, name = $2, rating = $3, notes = $4, repeat = $5
+       WHERE id = $6
        RETURNING id`,
-      [flight_id, name, rating ?? null, notes ?? null, id.data]
+      [flight_id, name, rating ?? null, notes ?? null, repeat, id.data]
     );
     if (result.rows.length === 0) return false;
 
@@ -144,7 +160,6 @@ router.put('/:id', async (req, res) => {
   if (!encontrou) return res.status(404).json({ error: 'Manobra não encontrada' });
   res.json(await buscarManobra(id.data));
 });
-
 
 router.delete('/:id', async (req, res) => {
   const id = idSchema.safeParse(req.params.id);

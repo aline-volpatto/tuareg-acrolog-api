@@ -83,10 +83,26 @@ router.delete('/:id', async (req, res) => {
     res.status(204).end();
   } catch (error) {
     if (error.code === '23503') {
-      return res.status(409).json({ error: 'Este aluno tem voos registrados e não pode ser apagado' });
-    }
+      return res.status(409).json({ error: 'Este aluno tem voos ou créditos de horas registrados e não pode ser apagado' });    }
     throw error;
   }
+});
+
+router.get('/:id/hours', async (req, res) => {
+  const id = idSchema.safeParse(req.params.id);
+  if (!id.success) return res.status(400).json({ error: 'ID inválido' });
+
+  const aluno = await pool.query('SELECT id FROM students WHERE id = $1', [id.data]);
+  if (aluno.rows.length === 0) return res.status(404).json({ error: 'Aluno não encontrado' });
+
+  const result = await pool.query(
+    `SELECT c.credited, f.flown, c.credited - f.flown AS available
+     FROM
+       (SELECT COALESCE(SUM(hours), 0) AS credited FROM hour_credits WHERE student_id = $1) c,
+       (SELECT COALESCE(SUM(flight_hours), 0) AS flown FROM flights WHERE student_id = $1) f`,
+    [id.data]
+  );
+  res.json(result.rows[0]);
 });
 
 export default router;
