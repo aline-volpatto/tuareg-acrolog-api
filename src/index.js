@@ -8,6 +8,8 @@ import 'dotenv/config';
 import flightsRouter from './routes/flights.js';
 import studentsRouter from './routes/students.js';
 import maneuversRouter from './routes/maneuvers.js';
+import figuresRouter from './routes/figures.js';
+import hourCreditsRouter from './routes/hour-credits.js';
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.get('/health', (req, res) => {
 app.use('/api/flights', exigirLogin, flightsRouter);
 app.use('/api/students', exigirLogin, studentsRouter);
 app.use('/api/maneuvers', exigirLogin, maneuversRouter);
+app.use('/api/figures', exigirLogin, figuresRouter);
+app.use('/api/hour-credits', exigirLogin, hourCreditsRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });
@@ -47,6 +51,7 @@ app.use((err, req, res, next) => {
   if (err.code === '23503') return res.status(400).json({ error: 'Registro relacionado não encontrado' });
   if (err.code === '22007' || err.code === '22008') return res.status(400).json({ error: 'Data inválida' });
   if (err.code === '22001') return res.status(400).json({ error: 'Texto longo demais para o campo' });
+  if (err.code === '23505') return res.status(409).json({ error: 'Registro duplicado' });
 
   res.status(500).json({ error: 'Erro interno' });
 });
