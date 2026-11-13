@@ -8,7 +8,11 @@ const idSchema = z.coerce.number().int().positive();
 
 const studentSchema = z.object({
   name: z.string().trim().min(1, 'Nome é obrigatório').max(100),
-  contact: z.string().trim().max(100).nullable().optional(),
+    contact: z
+    .string()
+    .regex(/^[1-9]{2}9\d{8}$/, 'Celular inválido. Envie só números, com DDD: 48999999999')
+    .nullable()
+    .optional(),
   level: z.string().trim().max(50).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
 }).strict();
@@ -20,6 +24,24 @@ function errosDeValidacao(error) {
 
 router.get('/', async (req, res) => {
   const result = await pool.query('SELECT * FROM students ORDER BY name');
+  res.json(result.rows);
+});
+
+router.get('/hours-summary', async (req, res) => {
+  const result = await pool.query(
+    `SELECT s.id, s.name,
+       COALESCE(c.credited, 0) AS credited,
+       COALESCE(f.flown, 0) AS flown,
+       COALESCE(c.credited, 0) - COALESCE(f.flown, 0) AS available
+     FROM students s
+     LEFT JOIN (
+       SELECT student_id, SUM(hours) AS credited FROM hour_credits GROUP BY student_id
+     ) c ON c.student_id = s.id
+     LEFT JOIN (
+       SELECT student_id, SUM(flight_hours) AS flown FROM flights GROUP BY student_id
+     ) f ON f.student_id = s.id
+     ORDER BY s.name`
+  );
   res.json(result.rows);
 });
 
