@@ -12,6 +12,13 @@ export const auth = betterAuth({
   rateLimit: {
     enabled: true,
   },
+
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ['x-nf-client-connection-ip', 'x-forwarded-for'],
+    },
+  },
+
   trustedOrigins: (process.env.TRUSTED_ORIGINS || '')
     .split(',')
     .map((origem) => origem.trim())
