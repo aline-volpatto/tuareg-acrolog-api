@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import pool from '../db.js';
+import { manobraDoVooSchema, comTransacao, salvarManobras } from '../lib/manobras.js';
 
 const router = Router();
 
@@ -16,6 +17,7 @@ const flightSchema = z.object({
   engine_start: horario,
   engine_stop: horario,
   notes: z.string().max(2000).nullable().optional(),
+  maneuvers: z.array(manobraDoVooSchema).max(50, 'Máximo de 50 figuras por voo').optional(),
 }).strict();
 
 function errosDeValidacao(error) {
@@ -90,14 +92,20 @@ router.post('/', async (req, res) => {
   const calculo = calcularVoo(d);
   if (calculo.erro) return res.status(400).json({ error: 'Dados inválidos', detalhes: [calculo.erro] });
 
-  const result = await pool.query(
-    `INSERT INTO flights (student_id, flight_date, aircraft, engine_start, engine_stop, flight_hours, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING *`,
-    [d.student_id, d.flight_date, d.aircraft ?? null, d.engine_start,
-     d.engine_stop, calculo.flight_hours, d.notes ?? null]
-  );
-  res.status(201).json(result.rows[0]);
+    const voo = await comTransacao(async (client) => {
+    const result = await client.query(
+      `INSERT INTO flights (student_id, flight_date, aircraft, engine_start, engine_stop, flight_hours, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [d.student_id, d.flight_date, d.aircraft ?? null, d.engine_start,
+       d.engine_stop, calculo.flight_hours, d.notes ?? null]
+    );
+    const novoVoo = result.rows[0];
+    if (d.maneuvers) await salvarManobras(client, novoVoo.id, d.maneuvers);
+    return novoVoo;
+  });
+
+  res.status(201).json(voo);
 });
 
 router.put('/:id', async (req, res) => {
@@ -113,17 +121,28 @@ router.put('/:id', async (req, res) => {
   const calculo = calcularVoo(d);
   if (calculo.erro) return res.status(400).json({ error: 'Dados inválidos', detalhes: [calculo.erro] });
 
-  const result = await pool.query(
-    `UPDATE flights
-     SET student_id = $1, flight_date = $2, aircraft = $3, engine_start = $4,
-         engine_stop = $5, flight_hours = $6, notes = $7
-     WHERE id = $8
-     RETURNING *`,
-    [d.student_id, d.flight_date, d.aircraft ?? null, d.engine_start,
-     d.engine_stop, calculo.flight_hours, d.notes ?? null, id.data]
-  );
-  if (result.rows.length === 0) return res.status(404).json({ error: 'Voo não encontrado' });
-  res.json(result.rows[0]);
+    const voo = await comTransacao(async (client) => {
+    const result = await client.query(
+      `UPDATE flights
+       SET student_id = $1, flight_date = $2, aircraft = $3, engine_start = $4,
+           engine_stop = $5, flight_hours = $6, notes = $7
+       WHERE id = $8
+       RETURNING *`,
+      [d.student_id, d.flight_date, d.aircraft ?? null, d.engine_start,
+       d.engine_stop, calculo.flight_hours, d.notes ?? null, id.data]
+    );
+    if (result.rows.length === 0) return null;
+
+    // Se a lista de figuras veio, ela substitui a antiga (os rolls vão junto, pelo CASCADE)
+    if (d.maneuvers) {
+      await client.query('DELETE FROM maneuvers WHERE flight_id = $1', [id.data]);
+      await salvarManobras(client, id.data, d.maneuvers);
+    }
+    return result.rows[0];
+  });
+
+  if (!voo) return res.status(404).json({ error: 'Voo não encontrado' });
+  res.json(voo);
 });
 
 router.delete('/:id', async (req, res) => {
